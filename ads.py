@@ -32,26 +32,12 @@
 # indexoffset - 4 bytes
 # read_length - 4 bytes
 
-import struct
-def get_ads_frame():
-    values = (
-        0, 44,
-        10, 10, 10, 30, 1, 1, 801,
-        172, 16, 23, 111, 1, 1, 32905,
-        3, 4, 12,
-        0, 0,
-        16416, 0,
-        1)
-    s = struct.Struct('<HIBBBBBBHBBBBBBHHHIIIIII')
-    return s.pack(*values)
-
-cx_frame = get_ads_frame()
-
-from socket import *
-s = socket(AF_INET, SOCK_STREAM)
-s.connect(('10.10.10.30', 48898))
-bytes_send = s.send(cx_frame)
-print(bytes_send)
-cx_data = s.recv(1024) #odbior danych (max 1024 bajtów)
-print(cx_data)
-s.close()
+import pyads
+client = pyads.AdsClient()
+client.connect('10.10.10.30')
+# response = client.read_device_info("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905)
+# response = client.read("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, 16416, 0, 1)
+# response = client.write("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, 16416, 0, b'a')
+response = client.read_state("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905)
+client.close()
+print(response)
