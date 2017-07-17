@@ -16,7 +16,10 @@ class AdsClient():
     def send(self, request):
         bytes_send = self.ads_socket.send(request)
         response = self.ads_socket.recv(65535)
-        return response[38:]
+        result = {'result' : response[38:42]}
+        if len(response) > 42:
+            result['data'] = response[42:]
+        return result
 
     def get_ams_tcp_header(self, length):
         values = (0, length)
@@ -47,12 +50,21 @@ class AdsClient():
 
     def read_device_info(self, net_id_target, port_target, net_id_source, port_source):
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, 1)
-        return self.send(request)
+        response = self.send(request)
+        response['major version'] = response['data'][0:1]
+        response['minor version'] = response['data'][1:2]
+        response['version build'] = response['data'][2:4]
+        response['device name'] = response['data'][4:]
+        del response['data']
+        return response
 
     def read(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length):
         values = (index_group, index_offset, length)
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, 2, self.get_header(values, 'III'))
-        return self.send(request)
+        response = self.send(request)
+        response['length'] = response['data'][0:4]
+        response['data'] = response['data'][4:]
+        return response
 
     def write(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, data):
         values = (index_group, index_offset, len(data))
@@ -61,9 +73,14 @@ class AdsClient():
 
     def read_state(self, net_id_target, port_target, net_id_source, port_source):
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, 4)
-        return self.send(request)
+        response = self.send(request)
+        response['ads state'] = response['data'][0:2]
+        response['device state'] = response['data'][2:4]
+        del response['data']
+        return response
 
-    def write_control(self, net_id_target, port_target, net_id_source, port_source, ads_state, device_state, data):
+    def write_control(self, net_id_target, port_target, net_id_source, port_source, ads_state, device_state, data=None):
+        data = data if data is not None else bytes([])
         values = (ads_state, device_state, len(data))
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, 5, self.get_header(values, 'HHI', data))
         return self.send(request)
@@ -71,7 +88,10 @@ class AdsClient():
     def add_device_notification(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, transmission_mode, max_delay, cycle_time):
         values = (index_group, index_offset, length, transmission_mode, max_delay, cycle_time, 0, 0, 0, 0)
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, 6, self.get_header(values, 'IIIIIIIIII'))
-        return self.send(request)
+        response = self.send(request)
+        response['notification handle'] = response['data'][0:4]
+        del response['data']
+        return response
 
     def delete_device_notification(self, net_id_target, port_target, net_id_source, port_source, notification_handle):
         values = (notification_handle)
@@ -80,13 +100,16 @@ class AdsClient():
 
     def device_notification(self, net_id_target, port_target, net_id_source, port_source, length, stamps, headers):
         values = (length, stamps)
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 7, self.get_header(values, 'II', headers))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 8, self.get_header(values, 'II', headers))
         return self.send(request)
 
     def read_write(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, data):
         values = (index_group, index_offset, length, len(data))
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, 9, self.get_header(values, 'IIII', data))
-        return self.send(request)
+        response = self.send(request)
+        response['length'] = response['data'][0:4]
+        response['data'] = response['data'][4:]
+        return response
 
     def close(self):
         self.ads_socket.close()
