@@ -23,6 +23,19 @@ class AdsState(Enum):
     ADSSTATE_RECONFIG = 16 # system should restart in config mode
 
 
+class AdsCommand(Enum):
+    Invalid = 0
+    ADS_Read_Device_Info = 1
+    ADS_Read = 2
+    ADS_Write = 3
+    ADS_Read_State = 4
+    ADS_Write_Control = 5
+    ADS_Add_Device_Notification = 6
+    ADS_Delete_Device_Notification = 7
+    ADS_Device_Notification = 8
+    ADS_Read_Write = 9
+
+
 class AdsClient():
 
     def __init__(self):
@@ -48,13 +61,13 @@ class AdsClient():
             'ams port target' : header[8],
             'ams net id source' : header[9:15],
             'ams port source' : header[15],
-            'command id' : header[16],
+            'command id' : AdsCommand(header[16]),
             'state flags' : {
-                'request' : not (header[17] & 0x0001),
-                'response' : (header[17] & 0x0001),
-                'ads command' : (header[17] & 0x0004),
-                'TCP' : not (header[17] & 0x0040),
-                'UDP' : (header[17] & 0x0040)
+                'request' : (header[17] & 0x0001) is False,
+                'response' : (header[17] & 0x0001) is True,
+                'ads command' : (header[17] & 0x0004) is True,
+                'TCP' : (header[17] & 0x0040) is False,
+                'UDP' : (header[17] & 0x0040) is True
             },
             'data length' : header[18],
             'error code' : header[19],
@@ -102,7 +115,7 @@ class AdsClient():
         return ams_tcp_header + ams_header + data
 
     def read_device_info(self, net_id_target, port_target, net_id_source, port_source):
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 1)
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Read_Device_Info.value)
         response = self.send(request)
         device_info_format = self.get_align() + "BBH"
         device_info = struct.unpack(device_info_format, response['data'][0:4])
@@ -115,7 +128,7 @@ class AdsClient():
 
     def read(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length):
         values = (index_group, index_offset, length)
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 2, self.get_header(values, 'III'))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Read.value, self.get_header(values, 'III'))
         response = self.send(request)
         read_format = self.get_align() + "I"
         read = struct.unpack(read_format, response['data'][0:4])
@@ -125,11 +138,11 @@ class AdsClient():
 
     def write(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, data):
         values = (index_group, index_offset, len(data))
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 3, self.get_header(values, 'III', data))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Write.value, self.get_header(values, 'III', data))
         return self.send(request)
 
     def read_state(self, net_id_target, port_target, net_id_source, port_source):
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 4)
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Read_State.value)
         response = self.send(request)
         read_state_format = self.get_align() + "HH"
         read_state = struct.unpack(read_state_format, response['data'][0:4])
@@ -141,12 +154,12 @@ class AdsClient():
     def write_control(self, net_id_target, port_target, net_id_source, port_source, ads_state, device_state, data=None):
         data = data if data is not None else bytes([])
         values = (ads_state, device_state, len(data))
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 5, self.get_header(values, 'HHI', data))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Write_Control.value, self.get_header(values, 'HHI', data))
         return self.send(request)
 
     def add_device_notification(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, transmission_mode, max_delay, cycle_time):
         values = (index_group, index_offset, length, transmission_mode, max_delay, cycle_time, 0, 0, 0, 0)
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 6, self.get_header(values, 'IIIIIIIIII'))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Add_Device_Notification.value, self.get_header(values, 'IIIIIIIIII'))
         response = self.send(request)
         add_device_notification_format = self.get_align() + "I"
         add_device_notification = struct.unpack(add_device_notification_format, response['data'][0:4])
@@ -156,17 +169,17 @@ class AdsClient():
 
     def delete_device_notification(self, net_id_target, port_target, net_id_source, port_source, notification_handle):
         values = (notification_handle)
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 7, self.get_header(values, 'I'))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Delete_Device_Notification.value, self.get_header(values, 'I'))
         return self.send(request)
 
     def device_notification(self, net_id_target, port_target, net_id_source, port_source, length, stamps, headers):
         values = (length, stamps)
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 8, self.get_header(values, 'II', headers))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Device_Notification.value, self.get_header(values, 'II', headers))
         return self.send(request)
 
     def read_write(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, data):
         values = (index_group, index_offset, length, len(data))
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, 9, self.get_header(values, 'IIII', data))
+        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Read_Write.value, self.get_header(values, 'IIII', data))
         response = self.send(request)
         read_write_format = self.get_align() + "I"
         read_write = struct.unpack(read_write_format, response['data'][0:4])
