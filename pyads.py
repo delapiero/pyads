@@ -172,10 +172,36 @@ class AdsClient():
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Delete_Device_Notification.value, self.get_header(values, 'I'))
         return self.send(request)
 
-    def device_notification(self, net_id_target, port_target, net_id_source, port_source, length, stamps, headers):
-        values = (length, stamps)
-        request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Device_Notification.value, self.get_header(values, 'II', headers))
-        return self.send(request)
+    def device_notification(self, response):
+        result = self.read_response(response)
+        device_notification_format = self.get_align() + "II"
+        stamp_header_format = self.get_align() + "QI"
+        notification_sample_format = self.get_align() + "II"
+        device_notification = struct.unpack(device_notification_format, result['data'][0:8])
+        result['notification length'] = device_notification[0]
+        result['stamps'] = device_notification[1]
+        result['headers'] = []
+        result['data'] = result['data'][8:]
+        for _ in range(result['stamps']):
+            stamp_header = struct.unpack(stamp_header_format, result['data'][0:12])
+            new_header = {
+                'time stamp' : stamp_header[0],
+                'samples count' : stamp_header[1],
+                'samples' : []
+            }
+            result['data'] = result['data'][12:]
+            for _ in range(new_header['samples count']):
+                notification_sample = struct.unpack(notification_sample_format, result['data'][0:8])
+                new_notification_sample = {
+                    'notification handle' : notification_sample[0],
+                    'sample size' : notification_sample[1]
+                }
+                new_notification_sample['sample data'] = result['data'][8:new_notification_sample['sample size']]
+                new_header['samples'].append(new_notification_sample)
+                result['data'] = result['data'][8 + new_notification_sample['sample size']:]
+            result['headers'].append(new_header)
+        del result['data']
+        return result
 
     def read_write(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, data):
         values = (index_group, index_offset, length, len(data))
