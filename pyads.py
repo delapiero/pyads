@@ -49,7 +49,13 @@ class AdsClient():
             'ams net id source' : header[9:15],
             'ams port source' : header[15],
             'command id' : header[16],
-            'state flags' : header[17],
+            'state flags' : {
+                'request' : not (header[17] & 0x0001),
+                'response' : (header[17] & 0x0001),
+                'ads command' : (header[17] & 0x0004),
+                'TCP' : not (header[17] & 0x0040),
+                'UDP' : (header[17] & 0x0040)
+            },
             'data length' : header[18],
             'error code' : header[19],
             'invoke id' : header[20],
