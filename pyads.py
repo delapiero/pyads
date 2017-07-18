@@ -28,6 +28,9 @@ class AdsClient():
     def __init__(self):
         self.ads_socket = socket(AF_INET, SOCK_STREAM)
 
+    def __del__(self):
+        self.close()
+
     def connect(self, ip, port=None):
         self.ads_socket.connect((ip, port if port is not None else 48898))
 
@@ -57,7 +60,7 @@ class AdsClient():
         return result
 
     def get_align(self):
-        return "<"
+        return "<" # https://docs.python.org/3/library/struct.html#byte-order-size-and-alignment
 
     def get_ams_tcp_header_format(self):
         return 'HI'
