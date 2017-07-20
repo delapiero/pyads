@@ -32,6 +32,7 @@
 # indexoffset - 4 bytes
 # read_length - 4 bytes
 
+import time
 import pyads
 
 client = pyads.AdsClient()
@@ -40,7 +41,14 @@ client.connect('10.10.10.30')
 # response = client.read("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, 16416, 0, 1)
 # response = client.write("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, 16416, 0, b'a')
 # response = client.read_state("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905)
-# response = client.write_control("10.10.10.30.1.1", 10000, "172.16.23.111.1.1", 32905, 15, 0)
+# response = client.write_control("10.10.10.30.1.1", 10000, "172.16.23.111.1.1", 32905, 2, 0)
 # response = client.read_write("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, 16416, 0, 1, b'a')
-client.close()
+response = client.add_device_notification("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, 16416, 0, 1, 4, 500000, 1000)
 print(response)
+client.listen()
+time.sleep(10)
+client.listen_stop()
+# client.connect('10.10.10.30')
+# response = client.delete_device_notification("10.10.10.30.1.1", 801, "172.16.23.111.1.1", 32905, response['notification handle'])
+# print(response)
+client.close()

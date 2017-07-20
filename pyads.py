@@ -1,5 +1,8 @@
 import struct
-from socket import *
+import threading
+import select
+from datetime import datetime, timedelta
+from socket import socket, AF_INET, SOCK_STREAM
 from enum import Enum
 
 
@@ -40,6 +43,9 @@ class AdsClient():
 
     def __init__(self):
         self.ads_socket = socket(AF_INET, SOCK_STREAM)
+        self.dev_thread = threading.Thread(target=self.listen_task)
+        self.dev_thread.daemon = True
+        self.dev_thread_running = False
 
     def __del__(self):
         self.close()
@@ -52,6 +58,23 @@ class AdsClient():
         response = self.ads_socket.recv(65535)
         return self.read_response(response)
 
+    def listen(self):
+        self.dev_thread_running = True
+        self.dev_thread.start()
+
+    def listen_task(self):
+        while self.dev_thread_running:
+            self.ads_socket.setblocking(0)
+            ready = select.select([self.ads_socket], [], [], 5)
+            if ready[0]:
+                response = self.ads_socket.recv(65535)
+                if response:
+                    print(self.device_notification(self.read_response(response)))
+
+    def listen_stop(self):
+        self.dev_thread_running = False
+        self.dev_thread.join()
+
     def read_response(self, response):
         response_format = self.get_align() + self.get_ams_tcp_header_format() + self.get_ams_header_format() + "I"
         header = struct.unpack(response_format, response[0:42])
@@ -63,11 +86,11 @@ class AdsClient():
             'ams port source' : header[15],
             'command id' : AdsCommand(header[16]),
             'state flags' : {
-                'request' : (header[17] & 0x0001) is False,
-                'response' : (header[17] & 0x0001) is True,
-                'ads command' : (header[17] & 0x0004) is True,
-                'TCP' : (header[17] & 0x0040) is False,
-                'UDP' : (header[17] & 0x0040) is True
+                'request' : (header[17] & 0x0001) == 0,
+                'response' : (header[17] & 0x0001) > 0,
+                'ads command' : (header[17] & 0x0004) > 0,
+                'TCP' : (header[17] & 0x0040) == 0,
+                'UDP' : (header[17] & 0x0040) > 0
             },
             'data length' : header[18],
             'error code' : header[19],
@@ -155,7 +178,7 @@ class AdsClient():
         data = data if data is not None else bytes([])
         values = (ads_state, device_state, len(data))
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Write_Control.value, self.get_header(values, 'HHI', data))
-        return self.send(request)
+        return self.device_notification(self.send(request))
 
     def add_device_notification(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, transmission_mode, max_delay, cycle_time):
         values = (index_group, index_offset, length, transmission_mode, max_delay, cycle_time, 0, 0, 0, 0)
@@ -168,40 +191,40 @@ class AdsClient():
         return response
 
     def delete_device_notification(self, net_id_target, port_target, net_id_source, port_source, notification_handle):
-        values = (notification_handle)
+        values = [notification_handle]
         request = self.get_data(net_id_target, port_target, net_id_source, port_source, AdsCommand.ADS_Delete_Device_Notification.value, self.get_header(values, 'I'))
         return self.send(request)
 
     def device_notification(self, response):
-        result = self.read_response(response)
-        device_notification_format = self.get_align() + "II"
+        response['notification length'] = response['result']
+        del response['result']
+        device_notification_format = self.get_align() + "I"
         stamp_header_format = self.get_align() + "QI"
         notification_sample_format = self.get_align() + "II"
-        device_notification = struct.unpack(device_notification_format, result['data'][0:8])
-        result['notification length'] = device_notification[0]
-        result['stamps'] = device_notification[1]
-        result['headers'] = []
-        result['data'] = result['data'][8:]
-        for _ in range(result['stamps']):
-            stamp_header = struct.unpack(stamp_header_format, result['data'][0:12])
+        device_notification = struct.unpack(device_notification_format, response['data'][0:4]) 
+        response['stamps'] = device_notification[0]
+        response['headers'] = []
+        response['data'] = response['data'][4:]
+        for _ in range(response['stamps']):
+            stamp_header = struct.unpack(stamp_header_format, response['data'][0:12])
             new_header = {
-                'time stamp' : stamp_header[0],
+                'time stamp' : datetime(1601,1,1) + timedelta(microseconds=(stamp_header[0]/10)),
                 'samples count' : stamp_header[1],
                 'samples' : []
             }
-            result['data'] = result['data'][12:]
+            response['data'] = response['data'][12:]
             for _ in range(new_header['samples count']):
-                notification_sample = struct.unpack(notification_sample_format, result['data'][0:8])
+                notification_sample = struct.unpack(notification_sample_format, response['data'][0:8])
                 new_notification_sample = {
                     'notification handle' : notification_sample[0],
                     'sample size' : notification_sample[1]
                 }
-                new_notification_sample['sample data'] = result['data'][8:new_notification_sample['sample size']]
+                new_notification_sample['sample data'] = response['data'][8:8 + new_notification_sample['sample size']]
                 new_header['samples'].append(new_notification_sample)
-                result['data'] = result['data'][8 + new_notification_sample['sample size']:]
-            result['headers'].append(new_header)
-        del result['data']
-        return result
+                response['data'] = response['data'][8 + new_notification_sample['sample size']:]
+            response['headers'].append(new_header)
+        del response['data']
+        return response
 
     def read_write(self, net_id_target, port_target, net_id_source, port_source, index_group, index_offset, length, data):
         values = (index_group, index_offset, length, len(data))
