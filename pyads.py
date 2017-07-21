@@ -42,6 +42,8 @@ class AdsCommand(Enum):
 class AdsClient():
 
     def __init__(self):
+        self.ip = ""
+        self.port = 48898
         self.dev_thread = threading.Thread(target=self.listen_task)
         self.dev_thread.daemon = True
         self.dev_thread_running = False
@@ -51,11 +53,11 @@ class AdsClient():
         self.port = port if port is not None else 48898
 
     def send(self, request):
-        self.ads_socket = socket(AF_INET, SOCK_STREAM)
-        self.ads_socket.connect((self.ip, self.port))
-        bytes_send = self.ads_socket.send(request)
-        response = self.ads_socket.recv(65535)
-        self.ads_socket.close()
+        ads_socket = socket(AF_INET, SOCK_STREAM)
+        ads_socket.connect((self.ip, self.port))
+        ads_socket.send(request)
+        response = ads_socket.recv(65535)
+        ads_socket.close()
         return self.read_response(response)
 
     def listen(self):
