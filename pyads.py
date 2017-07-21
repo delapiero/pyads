@@ -42,7 +42,6 @@ class AdsCommand(Enum):
 class AdsClient():
 
     def __init__(self):
-        self.ads_socket = socket(AF_INET, SOCK_STREAM)
         self.dev_thread = threading.Thread(target=self.listen_task)
         self.dev_thread.daemon = True
         self.dev_thread_running = False
@@ -51,11 +50,15 @@ class AdsClient():
         self.close()
 
     def connect(self, ip, port=None):
-        self.ads_socket.connect((ip, port if port is not None else 48898))
+        self.ip = ip
+        self.port = port if port is not None else 48898
 
     def send(self, request):
+        self.ads_socket = socket(AF_INET, SOCK_STREAM)
+        self.ads_socket.connect((self.ip, self.port))
         bytes_send = self.ads_socket.send(request)
         response = self.ads_socket.recv(65535)
+        self.ads_socket.close()
         return self.read_response(response)
 
     def listen(self):
@@ -63,13 +66,26 @@ class AdsClient():
         self.dev_thread.start()
 
     def listen_task(self):
+        notification_socket = socket(AF_INET, SOCK_STREAM)
+        notification_socket.connect((self.ip, self.port))
+        notification_socket.settimeout(None)
         while self.dev_thread_running:
-            self.ads_socket.setblocking(0)
-            ready = select.select([self.ads_socket], [], [], 5)
+            ready = select.select([notification_socket], [], [], 5)
             if ready[0]:
-                response = self.ads_socket.recv(65535)
-                if response:
-                    print(self.device_notification(self.read_response(response)))
+                try:
+                    response = notification_socket.recv(65535)
+                    if response:
+                        self.listen_handler(self.device_notification(self.read_response(response)))
+                except ConnectionResetError:
+                    pass
+                finally:
+                    notification_socket.close()
+                    notification_socket = socket(AF_INET, SOCK_STREAM)
+                    notification_socket.connect((self.ip, self.port))
+                    notification_socket.settimeout(None)
+
+    def listen_handler(self, response):
+        print(response)
 
     def listen_stop(self):
         self.dev_thread_running = False
@@ -235,6 +251,3 @@ class AdsClient():
         response['read length'] = read_write[0]
         response['data'] = response['data'][4:]
         return response
-
-    def close(self):
-        self.ads_socket.close()
