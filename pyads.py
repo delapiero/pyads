@@ -46,9 +46,6 @@ class AdsClient():
         self.dev_thread.daemon = True
         self.dev_thread_running = False
 
-    def __del__(self):
-        self.close()
-
     def connect(self, ip, port=None):
         self.ip = ip
         self.port = port if port is not None else 48898
